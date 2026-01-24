@@ -157,9 +157,9 @@ if data_file and list_file:
                 c1.plotly_chart(px.treemap(merged_df, path=[px.Constant("現状"), "sex", "category"], values="count", color="year", color_continuous_scale="RdBu"), use_container_width=True)
                 c2.plotly_chart(px.treemap(df_scn, path=[px.Constant("改善後"), "sex", "category"], values="count", color="year", color_continuous_scale="RdBu"), use_container_width=True)
 
-            # --- 出典とロゴの表示エリア ---
+           # --- 出典とロゴの表示エリア ---
             st.divider()
-            col_f1, col_f2 = st.columns([0.7, 0.3])
+            col_f1, col_f2 = st.columns([0.8, 0.2])
             
             with col_f1:
                 st.markdown("""
@@ -174,6 +174,7 @@ if data_file and list_file:
             st.warning("データが一致しません。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
+
 
 
 
