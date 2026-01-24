@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from io import StringIO
 
 # ==========================================
 # 1. ページ基本設定
@@ -11,14 +10,48 @@ from io import StringIO
 st.set_page_config(layout="wide", page_title="滋賀県 健康寿命リスク解析")
 
 # ==========================================
-# 2. シミュレーション関数
+# 2. パスワード認証機能
+# ==========================================
+def check_password():
+    """パスワードが正しいかチェックする関数"""
+    def password_entered():
+        if st.session_state["password"] == "shiga123":
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # パスワードをセッションから削除
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # 初回表示時
+        st.title("🔒 関係者限定アクセス")
+        st.text_input(
+            "パスワードを入力してください", type="password", on_change=password_entered, key="password"
+        )
+        return False
+    elif not st.session_state["password_correct"]:
+        # パスワードが間違っている場合
+        st.title("🔒 関係者限定アクセス")
+        st.text_input(
+            "パスワードを入力してください", type="password", on_change=password_entered, key="password"
+        )
+        st.error("😕 パスワードが正しくありません。")
+        return False
+    else:
+        # パスワードが正しい場合
+        return True
+
+# パスワード認証を実行。認証されない場合はここで処理をストップ
+if not check_password():
+    st.stop()
+
+# ==========================================
+# 3. シミュレーション関数
 # ==========================================
 def simulate_improvement(df, target_col, mode, rate):
     df_sim = df.copy()
     actual_max = df_sim[target_col].max()
     actual_min = df_sim[target_col].min()
     
-    # 改善対象の抽出
     if mode == "S1：Worst改善":
         mask = (df_sim[target_col] == actual_max)
     else:
@@ -31,12 +64,9 @@ def simulate_improvement(df, target_col, mode, rate):
     
     moved_total = df_sim["improved_num"].sum()
     
-    # 改善後のデータ行を作成
     df_new = df_sim[df_sim["improved_num"] > 0].copy()
     if not df_new.empty:
         df_new[target_col] = (df_new[target_col] - 1).clip(lower=1)
-        
-        # カテゴリIDを再生成
         df_new["category"] = (
             df_new["sex"].astype(str) + 
             df_new["BP_c"].astype(int).astype(str) + 
@@ -52,7 +82,7 @@ def simulate_improvement(df, target_col, mode, rate):
     return res.groupby(["category","sex","BP_c","SM","DM","BMI_c"], as_index=False)["count"].sum(), moved_total
 
 # ==========================================
-# 3. メインUI
+# 4. メインUI（ここから下の解析画面が表示される）
 # ==========================================
 st.markdown("<h1 style='color: #007BBB; border-bottom: 3px solid #007BBB;'>💧 滋賀県 健康寿命リスク解析ツール</h1>", unsafe_allow_html=True)
 
@@ -69,7 +99,7 @@ with st.sidebar:
     rate = st.slider("改善成功率", 0.0, 1.0, 0.20, step=0.01)
 
 # ==========================================
-# 4. 解析・計算ロジック
+# 5. 解析・計算ロジック
 # ==========================================
 if data_file and list_file:
     try:
@@ -79,7 +109,6 @@ if data_file and list_file:
         df_raw.columns = [c.strip() for c in df_raw.columns]
         df_ref.columns = [c.strip() for c in df_ref.columns]
 
-        # リスク判定ロジック
         df_raw["BP_c"] = np.select([
             (df_raw["SBP"]>=160)|(df_raw["DBP"]>=100), 
             (df_raw["SBP"]>=140)|(df_raw["DBP"]>=90)
@@ -96,10 +125,7 @@ if data_file and list_file:
             for i, col in enumerate(["BP_c", "SM", "DM", "BMI_c"], 1):
                 merged_df[col] = merged_df["category"].str[i].astype(int)
             
-            # シミュレーション実行
             df_scn, moved_total = simulate_improvement(merged_df, factor, mode, rate)
-            
-            # 改善後のカテゴリに基づきyearを再マッピング
             df_scn = pd.merge(df_scn, df_ref[["category", "year"]], on="category", how="left")
             df_scn["year"] = pd.to_numeric(df_scn["year"], errors='coerce').fillna(0)
 
@@ -107,7 +133,6 @@ if data_file and list_file:
             v_base = (merged_df["year"] * merged_df["count"]).sum() / total_n
             v_scn = (df_scn["year"] * df_scn["count"]).sum() / total_n
             
-            # 結果表示
             st.subheader("📊 解析結果サマリー")
             m1, m2, m3 = st.columns(3)
             m1.metric("現状の平均健康寿命", f"{v_base:.2f} 歳")
@@ -119,7 +144,6 @@ if data_file and list_file:
             with t1:
                 db = merged_df.groupby("year")["count"].sum().reset_index().sort_values("year")
                 ds = df_scn.groupby("year")["count"].sum().reset_index().sort_values("year")
-
                 fig = go.Figure()
                 fig.add_trace(go.Bar(x=db["year"], y=db["count"], name="現状", marker_color="gray", opacity=0.4))
                 fig.add_trace(go.Bar(x=ds["year"], y=ds["count"], name="改善後", marker_color="#007BBB", opacity=0.7))
@@ -134,7 +158,6 @@ if data_file and list_file:
                 ).fillna(0)
                 df_diff["diff"] = df_diff["scn"] - df_diff["base"]
                 plot_diff = df_diff[df_diff["diff"].abs() > 0.01].sort_values("diff")
-                
                 if not plot_diff.empty:
                     fig_bar = px.bar(plot_diff, x="category", y="diff", color="diff", color_continuous_scale="RdBu", title="カテゴリ別の人数増減")
                     st.plotly_chart(fig_bar, use_container_width=True)
@@ -144,6 +167,6 @@ if data_file and list_file:
                 c1.plotly_chart(px.treemap(merged_df, path=[px.Constant("現状"), "sex", "category"], values="count", color="year", color_continuous_scale="RdBu"), use_container_width=True)
                 c2.plotly_chart(px.treemap(df_scn, path=[px.Constant("改善後"), "sex", "category"], values="count", color="year", color_continuous_scale="RdBu"), use_container_width=True)
         else:
-            st.warning("アップロードされたデータのカテゴリがマスタデータ（list.csv）と一致しませんでした。")
+            st.warning("アップロードされたデータのカテゴリがマスタデータと一致しませんでした。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
