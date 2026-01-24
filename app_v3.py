@@ -3,11 +3,13 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from PIL import Image
+import os
 
 # ==========================================
 # 1. ページ基本設定
 # ==========================================
-st.set_page_config(layout="wide", page_title="健康寿命リスク解析")
+st.set_page_config(layout="wide", page_title="滋賀県 健康寿命リスク解析")
 
 # ==========================================
 # 2. パスワード認証機能
@@ -36,7 +38,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 3. シミュレーション関数 (ロジック変更なし)
+# 3. シミュレーション関数 (ロジック維持)
 # ==========================================
 def simulate_improvement(df, target_col, mode, rate):
     df_sim = df.copy()
@@ -75,7 +77,7 @@ def simulate_improvement(df, target_col, mode, rate):
 # ==========================================
 # 4. メインUI
 # ==========================================
-st.markdown("<h1 style='color: #007BBB; border-bottom: 3px solid #007BBB;'>健康寿命リスク解析ツール</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='color: #007BBB; border-bottom: 3px solid #007BBB;'>💧 滋賀県 健康寿命リスク解析ツール</h1>", unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("📂 データ読み込み")
@@ -110,8 +112,6 @@ if data_file and list_file:
                 merged_df[col] = merged_df["category"].str[i].astype(int)
             
             df_scn, moved_total = simulate_improvement(merged_df, factor, mode, rate)
-            
-            # 再マッピング
             df_scn = pd.merge(df_scn, df_ref[["category", "year"]], on="category", how="left")
             df_scn["year"] = pd.to_numeric(df_scn["year"], errors='coerce').fillna(0)
 
@@ -137,19 +137,15 @@ if data_file and list_file:
                 st.plotly_chart(fig, use_container_width=True)
             
             with t2:
-                # 昨日の描画コードに戻し、カテゴリの型のみ統一
                 df_diff = pd.merge(
                     merged_df[["category", "count"]].rename(columns={"count":"base"}), 
                     df_scn[["category", "count"]].rename(columns={"count":"scn"}), 
                     on="category", how="outer"
                 ).fillna(0)
                 df_diff["diff"] = df_diff["scn"] - df_diff["base"]
-                
-                # 0以外の変化を表示（判定を昨日のロジックに近く）
                 plot_diff = df_diff[df_diff["diff"] != 0].sort_values("diff")
                 
                 if not plot_diff.empty:
-                    # Plotlyがカテゴリを正しく並べるように文字列変換
                     plot_diff["category"] = plot_diff["category"].astype(str)
                     fig_bar = px.bar(plot_diff, x="category", y="diff", color="diff", color_continuous_scale="RdBu", title="カテゴリ別の人数増減")
                     st.plotly_chart(fig_bar, use_container_width=True)
@@ -160,9 +156,25 @@ if data_file and list_file:
                 c1, c2 = st.columns(2)
                 c1.plotly_chart(px.treemap(merged_df, path=[px.Constant("現状"), "sex", "category"], values="count", color="year", color_continuous_scale="RdBu"), use_container_width=True)
                 c2.plotly_chart(px.treemap(df_scn, path=[px.Constant("改善後"), "sex", "category"], values="count", color="year", color_continuous_scale="RdBu"), use_container_width=True)
+
+            # --- 出典とロゴの表示エリア ---
+            st.divider()
+            col_f1, col_f2 = st.columns([0.7, 0.3])
+            
+            with col_f1:
+                st.markdown("""
+                **出典・解析元** * データ：滋賀県 国保データベース(KDB)  
+                * 算出：健康寿命推計ロジックに基づくシミュレーション
+                """)
+            
+            with col_f2:
+                if os.path.exists("logo.png"):
+                    st.image("logo.png", width=150)
+
         else:
             st.warning("データが一致しません。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
+
 
 
