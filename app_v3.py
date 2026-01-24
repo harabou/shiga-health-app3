@@ -9,7 +9,7 @@ import os
 # ==========================================
 # 1. ページ基本設定
 # ==========================================
-st.set_page_config(layout="wide", page_title="滋賀県 健康寿命リスク解析")
+st.set_page_config(layout="wide", page_title="健康寿命リスク解析")
 
 # ==========================================
 # 2. パスワード認証機能
@@ -77,7 +77,7 @@ def simulate_improvement(df, target_col, mode, rate):
 # ==========================================
 # 4. メインUI
 # ==========================================
-st.markdown("<h1 style='color: #007BBB; border-bottom: 3px solid #007BBB;'>💧 滋賀県 健康寿命リスク解析ツール</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='color: #007BBB; border-bottom: 3px solid #007BBB;'>健康寿命リスク解析ツール</h1>", unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("📂 データ読み込み")
@@ -176,6 +176,7 @@ if data_file and list_file:
             st.warning("データが一致しません。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
+
 
 
 
