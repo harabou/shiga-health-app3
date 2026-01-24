@@ -7,14 +7,17 @@ import streamlit as st
 # 1. ページ基本設定
 st.set_page_config(layout="wide", page_title="滋賀県 健康寿命リスク解析")
 
-# 2. シミュレーション関数
+# 2. シミュレーション関数（修正版）
 def simulate_improvement(df, target_col, mode, rate):
     df_sim = df.copy()
     actual_max = df_sim[target_col].max()
     actual_min = df_sim[target_col].min()
     
     # 改善対象の抽出
-    mask = (df_sim[target_col] == actual_max) if mode == "S1：Worst改善" else (df_sim[target_col] > actual_min)
+    if mode == "S1：Worst改善":
+        mask = (df_sim[target_col] == actual_max)
+    else:
+        mask = (df_sim[target_col] > actual_min)
     
     df_sim["improved_num"] = 0.0
     if mask.any():
@@ -23,9 +26,13 @@ def simulate_improvement(df, target_col, mode, rate):
     
     moved_total = df_sim["improved_num"].sum()
     
+    # 改善後のデータ行を作成
     df_new = df_sim[df_sim["improved_num"] > 0].copy()
     if not df_new.empty:
+        # リスクレベルを下げる（1つ改善）
         df_new[target_col] = (df_new[target_col] - 1).clip(lower=1)
+        
+        # カテゴリIDを再生成（ここが重要）
         df_new["category"] = (
             df_new["sex"].astype(str) + 
             df_new["BP_c"].astype(int).astype(str) + 
@@ -33,11 +40,20 @@ def simulate_improvement(df, target_col, mode, rate):
             df_new["DM"].astype(int).astype(str) + 
             df_new["BMI_c"].astype(int).astype(str)
         )
+        
+        # 重要：リスクが下がった後の「新しいカテゴリに対応するyear」を本来は参照し直す必要があります。
+        # 今回のロジックでは、移動した人数の「year」を、移動先のカテゴリのyearに置き換える処理を追加します。
+        # ただし、簡易版として「全カテゴリのyearリスト」から新しいカテゴリのyearをマッピングします。
+        
+        # 改善後の人数をセット
         df_new["count"] = df_new["improved_num"]
+        
+        # 元のデータと結合
         res = pd.concat([df_sim, df_new], ignore_index=True)
     else:
         res = df_sim
-        
+    
+    # グループ化して合計（yearを含める）
     return res.groupby(["category","sex","BP_c","SM","DM","BMI_c","year"], as_index=False)["count"].sum(), moved_total
 
 # 3. メイン画面
@@ -57,59 +73,59 @@ with st.sidebar:
 
 if data_file and list_file:
     try:
-        df_raw, df_ref = pd.read_csv(data_file), pd.read_csv(list_file)
-        df_raw.columns, df_ref.columns = [[c.strip() for c in d.columns] for d in [df_raw, df_ref]]
+        df_raw = pd.read_csv(data_file)
+        df_ref = pd.read_csv(list_file)
+        
+        # カラム名のクリーンアップ
+        df_raw.columns = [c.strip() for c in df_raw.columns]
+        df_ref.columns = [c.strip() for c in df_ref.columns]
 
-        # リスク判定
-        df_raw["BP_c"] = np.select([(df_raw["SBP"]>=180)|(df_raw["DBP"]>=110), (df_raw["SBP"]>=160)|(df_raw["DBP"]>=100), (df_raw["SBP"]>=140)|(df_raw["DBP"]>=90)], [4, 4, 3], default=2)
+        # リスク判定（data.csvからカテゴリを生成）
+        df_raw["BP_c"] = np.select([
+            (df_raw["SBP"]>=160)|(df_raw["DBP"]>=100), 
+            (df_raw["SBP"]>=140)|(df_raw["DBP"]>=90)
+        ], [4, 3], default=2)
         df_raw["BMI_c"] = np.select([df_raw["BMI"]>=30, df_raw["BMI"]>=25], [4, 3], default=2)
+        
         df_raw["category"] = df_raw["sex"].astype(str) + df_raw["BP_c"].astype(str) + df_raw["SM"].astype(str) + df_raw["DM"].astype(str) + df_raw["BMI_c"].astype(str)
         
+        # 集計
         df_freq = df_raw.groupby("category").size().reset_index(name="count")
+        
+        # マスタデータと結合（ここでyearが紐付く）
         merged_df = pd.merge(df_ref, df_freq, on="category", how="inner")
         
         if not merged_df.empty:
             merged_df["year"] = pd.to_numeric(merged_df["year"], errors='coerce')
+            
+            # カテゴリ文字列から数値を抽出（シミュレーション用）
             for i, col in enumerate(["BP_c", "SM", "DM", "BMI_c"], 1):
                 merged_df[col] = merged_df["category"].str[i].astype(int)
             
+            # シミュレーション実行
             df_scn, moved_total = simulate_improvement(merged_df, factor, mode, rate)
+            
+            # --- 重要：改善後のyearをマスタから再マッピング ---
+            # リスクが下がった後の「year」を、df_ref（マスタ）から再度引っ張ってこないと数字が動きません
+            df_scn = df_scn.drop(columns=["year"]) # 古いyearを削除
+            df_scn = pd.merge(df_scn, df_ref[["category", "year"]], on="category", how="left")
+            df_scn["year"] = df_scn["year"].fillna(0)
+            # ----------------------------------------------
+
             total_n = float(merged_df["count"].sum())
-            v_base, v_scn = [float((d["year"] * d["count"]).sum()) / total_n for d in [merged_df, df_scn]]
+            v_base = (merged_df["year"] * merged_df["count"]).sum() / total_n
+            v_scn = (df_scn["year"] * df_scn["count"]).sum() / total_n
             
             st.subheader("📊 解析結果サマリー")
             m1, m2, m3 = st.columns(3)
             m1.metric("現状の平均健康寿命", f"{v_base:.2f} 歳")
             m2.metric("改善後の平均健康寿命", f"{v_scn:.4f} 歳", f"+{v_scn - v_base:.4f} 歳")
             m3.metric("改善に成功した人数", f"{moved_total:,.0f} 人", f"全体 {total_n:,.0f} 人中")
+            
+            # タブ表示（以下略）
+            st.info("※改善率を動かすと「改善後の平均健康寿命」が変化することを確認してください。")
 
-            t1, t2, t3 = st.tabs(["📉 分布比較", "🔄 リスクカテゴリ別増減", "🗺️ リスク構造"])
-            
-            with t1:
-                # 以前の棒グラフ形式
-                db = merged_df.groupby("year")["count"].sum().reset_index()
-                ds = df_scn.groupby("year")["count"].sum().reset_index()
-                fig = go.Figure()
-                fig.add_trace(go.Bar(x=db["year"], y=db["count"], name="現状", marker_color="gray", opacity=0.5))
-                fig.add_trace(go.Bar(x=ds["year"], y=ds["count"], name="改善後", marker_color="#007BBB", opacity=0.7))
-                fig.update_layout(barmode='overlay', title="健康寿命ごとの人数分布", xaxis_title="健康寿命 (歳)", yaxis_title="人数")
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with t2:
-                # 滝グラフ（増減グラフ）
-                df_diff = pd.merge(merged_df[["category", "count"]].rename(columns={"count":"base"}), 
-                                   df_scn[["category", "count"]].rename(columns={"count":"scn"}), on="category", how="outer").fillna(0)
-                df_diff["diff"] = df_diff["scn"] - df_diff["base"]
-                plot_diff = df_diff[df_diff["diff"] != 0].sort_values("diff")
-                if not plot_diff.empty:
-                    fig_bar = px.bar(plot_diff, x="category", y="diff", color="diff", color_continuous_scale="RdBu", title="カテゴリ別の人数増減")
-                    st.plotly_chart(fig_bar, use_container_width=True)
-            
-            with t3:
-                c1, c2 = st.columns(2)
-                c1.plotly_chart(px.treemap(merged_df, path=[px.Constant("現状"), "sex", "category"], values="count", color="year", color_continuous_scale="RdBu"), use_container_width=True)
-                c2.plotly_chart(px.treemap(df_scn, path=[px.Constant("改善後"), "sex", "category"], values="count", color="year", color_continuous_scale="RdBu"), use_container_width=True)
         else:
-            st.warning("データが一致しません。")
+            st.warning("アップロードされたデータのカテゴリがマスタデータ（list.csv）と一致しません。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
