@@ -163,7 +163,7 @@ if data_file and list_file:
             
             with col_f1:
                 st.markdown("""
-                **出典* * Tsukinoki R,et al. Comprehensive assessment of the impact of blood pressure, body mass index, smoking, and diabetes on healthy life expectancy in Japan: NIPPON DATA90. J Epidemiol. 2025 Jan 11;35(8):349–54
+                **出典** Tsukinoki R,et al. Comprehensive assessment of the impact of blood pressure, body mass index, smoking, and diabetes on healthy life expectancy in Japan: NIPPON DATA90. J Epidemiol. 2025 Jan 11;35(8):349–54
                 """)
             
             with col_f2:
@@ -174,6 +174,7 @@ if data_file and list_file:
             st.warning("データが一致しません。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
+
 
 
 
