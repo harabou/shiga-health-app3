@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 # ==========================================
 # 1. ページ基本設定
 # ==========================================
-st.set_page_config(layout="wide", page_title="滋賀県 健康寿命リスク解析")
+st.set_page_config(layout="wide", page_title="健康寿命リスク解析")
 
 # ==========================================
 # 2. パスワード認証機能
@@ -164,3 +164,4 @@ if data_file and list_file:
             st.warning("データが一致しません。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
+
